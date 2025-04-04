@@ -223,6 +223,7 @@ function (dojo, declare) {
 
         addDiscOnBoard: async function( x, y, player )
         {
+          console.log("addDiscOnBoard", x,y,player)
             const color = this.gamedatas.players[ player ].color;
             
             document.getElementById('discs').insertAdjacentHTML('beforeend', `<div class="disc" data-color="${color}" id="disc_${x}${y}"></div>`);
