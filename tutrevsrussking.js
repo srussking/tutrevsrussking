@@ -98,6 +98,9 @@ function (dojo, declare) {
               }
             }
 
+            document.querySelectorAll('.square').forEach(square => square.addEventListener('click', e => this.onPlayDisc(e)));
+
+
             console.log( "Ending game setup" );
         },
        
@@ -110,25 +113,14 @@ function (dojo, declare) {
         //
         onEnteringState: function( stateName, args )
         {
-            console.log( 'Entering state: '+stateName, args );
+          console.log( 'Entering state: '+stateName );
             
-            switch( stateName )
-            {
-            
-            /* Example:
-            
-            case 'myGameState':
-            
-                // Show some HTML block at this game state
-                dojo.style( 'my_html_block_id', 'display', 'block' );
-                
-                break;
-           */
-           
-           
-            case 'dummy':
-                break;
-            }
+          switch( stateName )
+          {
+          case 'playerTurn':
+              this.updatePossibleMoves( args.args.possibleMoves );
+              break;
+          }
         },
 
         // onLeavingState: this method is called each time we are leaving a game state.
@@ -169,14 +161,7 @@ function (dojo, declare) {
                 switch( stateName )
                 {
                  case 'playerTurn':    
-                    const playableCardsIds = args.playableCardsIds; // returned by the argPlayerTurn
 
-                    // Add test action buttons in the action status bar, simulating a card click:
-                    playableCardsIds.forEach(
-                        cardId => this.statusBar.addActionButton(_('Play card with id ${card_id}').replace('${card_id}', cardId), () => this.onCardClick(cardId))
-                    ); 
-
-                    this.statusBar.addActionButton(_('Pass'), () => this.bgaPerformAction("actPass"), { color: 'secondary' }); 
                     break;
                 }
             }
@@ -234,6 +219,45 @@ function (dojo, declare) {
             await this.bgaPlayDojoAnimation(anim);
         },
 
+        updatePossibleMoves: function( possibleMoves )
+        {
+            // Remove current possible moves
+            document.querySelectorAll('.possibleMove').forEach(div => div.classList.remove('possibleMove'));
+
+            for( var x in possibleMoves )
+            {
+                for( var y in possibleMoves[ x ] )
+                {
+                    // x,y is a possible move
+                    document.getElementById(`square_${x}_${y}`).classList.add('possibleMove');
+                }            
+            }
+                        
+            this.addTooltipToClass( 'possibleMove', '', _('Place a disc here') );
+        },
+
+        onPlayDisc: function( evt )
+        {
+            // Stop this event propagation
+            evt.preventDefault();
+            evt.stopPropagation();
+
+            // Get the cliqued square x and y
+            // Note: square id format is "square_X_Y"
+            var coords = evt.currentTarget.id.split('_');
+            var x = coords[1];
+            var y = coords[2];
+
+            if(!document.getElementById(`square_${x}_${y}`).classList.contains('possibleMove')) {
+                // This is not a possible move => the click does nothing
+                return ;
+            }
+
+            this.bgaPerformAction("actPlayDisc", {
+                x:x,
+                y:y
+            });
+        },
         
         ///////////////////////////////////////////////////
         //// Reaction to cometD notifications
@@ -251,6 +275,8 @@ function (dojo, declare) {
         {
             console.log( 'notifications subscriptions setup' );
             
+            // automatically listen to the notifications, based on the `notif_xxx` function on this class.
+            this.bgaSetupPromiseNotifications();
             // TODO: here, associate your game notifications with local methods
             
             // Example 1: standard notification handling
@@ -280,5 +306,54 @@ function (dojo, declare) {
         },    
         
         */
+        notif_playDisc: async function( args )
+        {
+            // Remove current possible moves (makes the board more clear)
+            document.querySelectorAll('.possibleMove').forEach(div => div.classList.remove('possibleMove'));
+        
+            await this.addDiscOnBoard( args.x, args.y, args.player_id );
+        },
+        notif_turnOverDiscs: async function( args )
+        {
+            // Get the color of the player who is returning the discs
+            const targetColor = this.gamedatas.players[ args.player_id ].color;
+
+            // wait for the animations of all turned discs to be over before considering the notif done
+            await Promise.all(
+                args.turnedOver.map(disc => 
+                    this.animateTurnOverDisc(disc, targetColor)
+                )
+            );
+        },
+
+        animateTurnOverDisc: async function(disc, targetColor) {
+            const discDiv = document.getElementById(`disc_${disc.x}${disc.y}`);
+            if (!this.bgaAnimationsActive()) {
+                // do not play animations if the animations aren't activated (fast replay mode)
+                discDiv.dataset.color = targetColor;
+                return Promise.resolve();
+            }
+
+            // Make the disc blink 2 times
+            const anim = dojo.fx.chain( [
+                dojo.fadeOut( { node: discDiv } ),
+                dojo.fadeIn( { node: discDiv } ),
+                dojo.fadeOut( { 
+                                node: discDiv,
+                                onEnd: () => discDiv.dataset.color = targetColor,
+                            } ),
+                dojo.fadeIn( { node: discDiv } )
+            ] ); // end of dojo.fx.chain
+
+            await this.bgaPlayDojoAnimation(anim);
+        },
+        notif_newScores: async function( args )
+        {
+            for( var player_id in args.scores )
+            {
+                var newScore = args.scores[ player_id ];
+                this.scoreCtrl[ player_id ].toValue( newScore );
+            }
+        }
    });             
 });
